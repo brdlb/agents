@@ -27,6 +27,7 @@ flowchart TB
         LLM_Base["Base LLM Interface"]
         OpenAI["OpenAI Provider"]
         Anthropic["Anthropic Provider"]
+        OpenRouter["OpenRouter Provider"]
         Local["Local Models Provider"]
     end
 
@@ -87,7 +88,11 @@ class LLMProvider(ABC):
 **Провайдеры:**
 - OpenAI (GPT-4, GPT-3.5 Turbo)
 - Anthropic (Claude)
+- OpenRouter (унифицированный API для множества моделей)
 - Локальные модели (Ollama, LM Studio)
+
+**Особенности OpenRouter:**
+OpenRouter предоставляет унифицированный API для доступа к множеству LLM моделей от различных провайдеров через единый интерфейс. Это упрощает интеграцию для MVP, так как не требует отдельной настройки каждого провайдера. OpenRouter поддерживает десятки моделей включая GPT-4, Claude, Llama и другие. Для работы требуется API ключ с сайта openrouter.ai.
 
 ### 3.3 Session Manager
 
@@ -427,9 +432,10 @@ TELEGRAM_BOT_TOKEN=your_token
 TELEGRAM_ADMIN_IDS=123456789
 
 # LLM
-LLM_PROVIDER=openai  # openai, anthropic, local
+LLM_PROVIDER=openai  # openai, anthropic, openrouter, local
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
+OPENROUTER_API_KEY=sk-or-...
 
 # Storage
 DATA_DIR=./data  # Директория для JSON файлов
