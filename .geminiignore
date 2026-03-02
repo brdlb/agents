@@ -1,0 +1,24 @@
+# Игнорирование файлов для Gemini контекста
+
+# Python
+**/__pycache__/**
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Data & Logs
+logs/
+data/sessions/
+data/users/*/history.jsonl
+**/*.lock
+
+# Environment
+.env
+.venv/
+env/
+
+# Git
+.git/
