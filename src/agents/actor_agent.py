@@ -123,9 +123,21 @@ class ActorAgent(Actor, BaseAgent):
         for msg in history:
             if msg["role"] != "system":
                 # Убеждаемся что передаем только нужные поля
-                cleaned_msg = {"role": msg["role"], "content": msg.get("content")}
+                cleaned_msg = {"role": msg["role"], "content": msg.get("content", "")}
+                
+                # Безопасная обработка tool_calls
                 if msg.get("tool_calls"):
-                    cleaned_msg["tool_calls"] = msg["tool_calls"]
+                    try:
+                        # Проверяем что tool_calls сериализуемы
+                        json.dumps(msg["tool_calls"])
+                        cleaned_msg["tool_calls"] = msg["tool_calls"]
+                    except (TypeError, ValueError) as e:
+                        self.logger.warning(
+                            "invalid_tool_calls_in_history",
+                            error=str(e),
+                            tool_calls_type=type(msg.get("tool_calls"))
+                        )
+                
                 if msg.get("tool_call_id"):
                     cleaned_msg["tool_call_id"] = msg["tool_call_id"]
                 messages.append(cleaned_msg)
@@ -210,12 +222,38 @@ class ActorAgent(Actor, BaseAgent):
             new_messages.append(assistant_msg)
             
             async def handle_tool_call(tool_call):
+                # Явный импорт json для гарантии доступности
+                import json
+                
                 tool_name = tool_call["function"]["name"]
-                args = json.loads(tool_call["function"]["arguments"])
+                arguments_str = tool_call["function"]["arguments"]
+                
+                # DEBUG: Логируем начало обработки tool_call
+                self.logger.info("tool_call_start", tool_name=tool_name)
+                
+                # Безопасный парсинг аргументов
+                try:
+                    args = json.loads(arguments_str)
+                    self.logger.info("tool_args_parsed", tool_name=tool_name)
+                except Exception as e:
+                    self.logger.error(
+                        "tool_args_parse_error",
+                        tool_name=tool_name,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        arguments=arguments_str[:200] if arguments_str else "empty"
+                    )
+                    return {
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "name": tool_name,
+                        "content": f"Error: Failed to parse tool arguments: {str(e)}"
+                    }
 
                 if tool_name == "run_command":
                     command = args.get("command", "")
-                    await self.notify("🛠️ Вызываю субагента для выполнения задачи...")
+                    self.logger.info("executing_command", command=command[:100])
+                    await self.notify("🛠️ Выполняю команду...")
                     
                     # Создаем актора для выполнения команды
                     command_actor = CommandActor(
@@ -244,6 +282,14 @@ class ActorAgent(Actor, BaseAgent):
                 elif tool_name == "web_search":
                     query = args.get("query", "")
                     await self.notify(f"🌐 Ищу в интернете: {query}...")
+                    
+                    # DEBUG: Логируем создание WebSearchActor
+                    self.logger.info(
+                        "web_search_actor_spawning",
+                        has_system=bool(self.system),
+                        system_id=id(self.system) if self.system else None,
+                        actor_id=self.actor_id
+                    )
                     
                     # Создаем актора для веб-поиска
                     search_actor = WebSearchActor(executor=self.web_search_executor)
@@ -299,7 +345,19 @@ class ActorAgent(Actor, BaseAgent):
                 }
 
             # Выполняем все вызовы инструментов параллельно
-            tool_results = await asyncio.gather(*[handle_tool_call(tc) for tc in response.tool_calls])
+            try:
+                tool_results = await asyncio.gather(*[handle_tool_call(tc) for tc in response.tool_calls])
+            except Exception as e:
+                self.logger.error(
+                    "tool_execution_error",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    tool_count=len(response.tool_calls)
+                )
+                return {
+                    "role": "assistant",
+                    "content": f"Error executing tools: {str(e)}"
+                }, new_messages
             
             for tool_msg in tool_results:
                 messages.append(tool_msg)

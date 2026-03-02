@@ -3,11 +3,15 @@
 import asyncio
 import uuid
 from abc import ABC, abstractmethod
-from typing import Optional, Set
+from typing import Optional, Set, TYPE_CHECKING
 from enum import Enum
 
 from src.actors.message import ActorMessage
 from src.utils.logging import get_logger
+
+# Import ActorSystem для обратной совместимости
+if TYPE_CHECKING:
+    from src.actors.system import ActorSystem
 
 
 class ActorState(Enum):
@@ -18,51 +22,13 @@ class ActorState(Enum):
     ERROR = "error"
 
 
-class ActorSystem:
-    """Глобальная система акторов."""
-    
-    def __init__(self):
-        self.actors = {}
-        self._message_queue = asyncio.Queue()
-        self.logger = get_logger(__name__)
-
-    async def spawn(self, actor, parent_id: Optional[str] = None) -> str:
-        """Создание нового актора."""
-        self.actors[actor.actor_id] = actor
-        actor.system = self
-        actor.parent_id = parent_id
-        if parent_id:
-            parent = self.actors.get(parent_id)
-            if parent:
-                parent.children.add(actor.actor_id)
-        
-        # Запускаем актор в отдельной задаче
-        asyncio.create_task(actor._run())
-        return actor.actor_id
-
-    async def send(self, message: ActorMessage):
-        """Отправка сообщения актору."""
-        actor = self.actors.get(message.recipient)
-        if actor:
-            await actor.mailbox.put(message)
-        else:
-            self.logger.warning("actor_not_found", actor_id=message.recipient)
-
-    async def stop(self, actor_id: str):
-        """Остановка актора."""
-        actor = self.actors.get(actor_id)
-        if actor:
-            await actor.stop()
-            del self.actors[actor_id]
-
-
 class Actor(ABC):
     """Абстрактный базовый класс для всех акторов."""
     
     def __init__(self, actor_id: Optional[str] = None):
         self.actor_id = actor_id or f"actor_{uuid.uuid4().hex[:8]}"
         self.mailbox = asyncio.Queue()
-        self.system: Optional[ActorSystem] = None
+        self.system = None  # type: ignore[assignment]  # будет установлен при спавне
         self.parent_id: Optional[str] = None
         self.children: Set[str] = set()
         self.state = ActorState.IDLE
@@ -106,8 +72,17 @@ class Actor(ABC):
 
     async def spawn_child(self, actor):
         """Создание дочернего актора."""
+        self.logger.info(
+            "spawn_child_called",
+            actor_id=self.actor_id,
+            has_system=bool(self.system),
+            system_id=id(self.system) if self.system else None,
+            child_actor_id=actor.actor_id
+        )
         if self.system:
-            return await self.system.spawn(actor, parent_id=self.actor_id)
+            result = await self.system.spawn(actor, parent_id=self.actor_id)
+            self.logger.info("spawn_child_success", child_actor_id=result)
+            return result
         else:
             self.logger.error("actor_no_system", actor_id=self.actor_id)
             raise RuntimeError("Actor has no system")

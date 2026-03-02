@@ -20,6 +20,7 @@ from src.llm.factory import LLMFactory
 from src.session.manager import SessionManager
 from src.utils.config import settings
 from src.utils.logging import get_logger
+from src.actors.system import ActorSystem
 
 logger = get_logger(__name__)
 
@@ -40,6 +41,7 @@ class TelegramBot:
         self.session_manager = SessionManager()
         self.llm_provider = LLMFactory.get_default()
         self.application: Optional[Application] = None
+        self.actor_system = ActorSystem()
 
     async def start_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /start."""
@@ -116,6 +118,9 @@ class TelegramBot:
                 on_progress=on_progress
             )
             
+            # Регистрируем агента в ActorSystem
+            await self.actor_system.spawn(agent)
+            
             # Подготавливаем историю
             history = [
                 {"role": m.role, "content": m.content}
@@ -158,7 +163,12 @@ class TelegramBot:
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик ошибок."""
-        logger.error("telegram_error", error=str(context.error), update=str(update))
+        logger.error(
+            "telegram_error", 
+            error=str(context.error), 
+            error_type=type(context.error).__name__,
+            update=str(update)
+        )
         if isinstance(update, Update) and update.message:
             await update.message.reply_text("Произошла ошибка при обработке вашего запроса. Попробуйте позже.")
 

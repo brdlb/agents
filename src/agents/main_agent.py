@@ -1,5 +1,6 @@
 """Main Agent - основной агент системы с поддержкой выполнения команд."""
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -151,14 +152,57 @@ class MainAgent(BaseAgent):
             # Конвертируем сообщения в LLMMessage
             llm_messages = self.provider.format_messages(messages)
             
+            # Подробное логирование перед запросом к LLM
+            logger.info(
+                "main_agent_llm_request",
+                iteration=i,
+                provider=self.provider.provider_name,
+                model=self.provider.model,
+                message_count=len(llm_messages),
+                total_tokens_estimate=sum(len(m.content) // 4 for m in llm_messages),
+                has_tools=bool(tools),
+            )
+            
+            # Логируем структуру сообщений
+            for j, msg in enumerate(llm_messages):
+                logger.debug(
+                    f"main_agent_message_{j}",
+                    role=msg.role,
+                    content_length=len(msg.content),
+                    has_tool_calls=bool(msg.tool_calls),
+                )
+            
             # Запрос к LLM
             response = await self.provider.generate(llm_messages, tools=tools)
+            
+            # Логируем ответ от LLM
+            logger.info(
+                "main_agent_llm_response",
+                iteration=i,
+                provider=self.provider.provider_name,
+                model=response.model,
+                content_length=len(response.content),
+                finish_reason=response.finish_reason,
+                prompt_tokens=response.usage.get("prompt_tokens"),
+                completion_tokens=response.usage.get("completion_tokens"),
+                total_tokens=response.usage.get("total_tokens"),
+                has_tool_calls=bool(response.tool_calls),
+            )
             
             # Если нет вызовов инструментов, возвращаем текст
             if not response.tool_calls:
                 new_messages.append({"role": "assistant", "content": response.content})
                 await self._analyze_context_shift(messages, new_messages, user_id, user_dir)
                 return response.content, new_messages
+            
+            # Логируем информацию о tool calls
+            tool_names = [tc["function"]["name"] for tc in response.tool_calls]
+            logger.info(
+                "main_agent_tool_calls",
+                iteration=i,
+                tool_count=len(response.tool_calls),
+                tool_names=tool_names,
+            )
             
             # Обработка вызовов инструментов
             assistant_msg = {"role": "assistant", "content": response.content, "tool_calls": response.tool_calls}
@@ -202,6 +246,16 @@ class MainAgent(BaseAgent):
 
             # Выполняем все вызовы инструментов параллельно
             tool_results = await asyncio.gather(*[handle_tool_call(tc) for tc in response.tool_calls])
+            
+            # Логируем результаты выполнения инструментов
+            for tr in tool_results:
+                logger.info(
+                    "main_agent_tool_result",
+                    tool_name=tr["name"],
+                    tool_call_id=tr["tool_call_id"],
+                    result_length=len(tr["content"]),
+                    result_preview=tr["content"][:100] if tr["content"] else "(empty)",
+                )
             
             for tool_msg in tool_results:
                 messages.append(tool_msg)

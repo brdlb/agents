@@ -33,21 +33,40 @@ class LLMFactory:
         """
         name = provider_name or settings.llm_provider
         
+        logger.info(
+            "llm_provider_creating",
+            provider_name=name,
+            model=model or settings.default_model,
+        )
+        
         if name.lower() == "openai":
-            return OpenAIProvider(
+            provider = OpenAIProvider(
                 api_key=api_key or settings.openai_api_key,
                 model=model or settings.default_model,
                 **kwargs
             )
+            logger.info(
+                "llm_provider_created",
+                provider_name="openai",
+                model=provider.model,
+            )
+            return provider
         
         if name.lower() == "openrouter":
-            return OpenRouterProvider(
+            provider = OpenRouterProvider(
                 api_key=api_key or settings.openrouter_api_key,
                 model=model or settings.default_model,
                 **kwargs
             )
+            logger.info(
+                "llm_provider_created",
+                provider_name="openrouter",
+                model=provider.model,
+            )
+            return provider
         
         # В будущем здесь будут другие провайдеры
+        logger.error("llm_provider_unknown", provider_name=name)
         raise ValueError(f"Unknown LLM provider: {name}")
 
     @staticmethod

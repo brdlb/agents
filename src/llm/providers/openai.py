@@ -77,11 +77,26 @@ class OpenAIProvider(LLMProvider):
                 msg["tool_call_id"] = m.tool_call_id
             openai_messages.append(msg)
         
-        logger.debug(
-            "openai_generate",
+        # Подробное логирование начала запроса
+        logger.info(
+            "llm_request_start",
+            provider="openai",
             model=self.model,
-            message_count=len(messages)
+            message_count=len(messages),
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
+        
+        # Логируем сообщения (с обрезкой для читаемости)
+        for i, msg in enumerate(openai_messages):
+            content_preview = msg["content"][:200] + "..." if len(msg.get("content", "")) > 200 else msg.get("content", "")
+            logger.debug(
+                f"llm_message_{i}",
+                role=msg["role"],
+                content_length=len(msg.get("content", "")),
+                content_preview=content_preview,
+                has_tool_calls=bool(msg.get("tool_calls")),
+            )
         
         try:
             response = await self.client.chat.completions.create(
@@ -109,6 +124,32 @@ class OpenAIProvider(LLMProvider):
                     }
                     for tc in message.tool_calls
                 ]
+                # Логируем tool calls
+                logger.info(
+                    "llm_response_tool_calls",
+                    tool_count=len(tool_calls),
+                    tools=[tc["function"]["name"] for tc in tool_calls],
+                )
+            
+            # Логируем успешный ответ с использованием токенов
+            logger.info(
+                "llm_request_complete",
+                provider="openai",
+                model=response.model,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                total_tokens=usage.total_tokens,
+                finish_reason=response.choices[0].finish_reason,
+                content_length=len(content),
+                has_tool_calls=bool(tool_calls),
+            )
+            
+            # Логируем начало контента для отладки
+            content_preview = content[:150] + "..." if len(content) > 150 else content
+            logger.debug(
+                "llm_response_content_preview",
+                content_preview=content_preview,
+            )
             
             return LLMResponse(
                 content=content,
@@ -122,7 +163,22 @@ class OpenAIProvider(LLMProvider):
                 tool_calls=tool_calls
             )
         except openai.APIError as e:
-            logger.error("openai_api_error", error=str(e))
+            logger.error(
+                "llm_api_error",
+                provider="openai",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                status_code=getattr(e, "status_code", None),
+                response_body=getattr(e, "response", None),
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "llm_unexpected_error",
+                provider="openai",
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
             raise
 
     async def get_token_count(self, text: str) -> int:
@@ -143,13 +199,24 @@ class OpenAIProvider(LLMProvider):
         Returns:
             True если соединение успешно
         """
+        logger.info("llm_connection_check_start", provider="openai", model=self.model)
         try:
             # Пробуем получить список моделей
             await self.client.models.list()
-            logger.info("openai_connection_valid")
+            logger.info(
+                "llm_connection_check_success",
+                provider="openai",
+                model=self.model
+            )
             return True
         except Exception as e:
-            logger.error("openai_connection_error", error=str(e))
+            logger.error(
+                "llm_connection_check_failed",
+                provider="openai",
+                model=self.model,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
             return False
 
     async def close(self) -> None:

@@ -41,11 +41,22 @@ class OpenRouterProvider(OpenAIProvider):
 
     async def validate_connection(self) -> bool:
         """Проверка соединения с OpenRouter."""
+        logger.info("llm_connection_check_start", provider="openrouter", model=self.model)
         try:
             # У OpenRouter проверка моделей работает так же
             await self.client.models.list()
-            logger.info("openrouter_connection_valid")
+            logger.info(
+                "llm_connection_check_success",
+                provider="openrouter",
+                model=self.model
+            )
             return True
         except Exception as e:
-            logger.error("openrouter_connection_error", error=str(e))
+            logger.error(
+                "llm_connection_check_failed",
+                provider="openrouter",
+                model=self.model,
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
             return False
