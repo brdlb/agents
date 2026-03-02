@@ -14,6 +14,7 @@ from src.executor.command import CommandExecutor
 from src.executor.web_search import WebSearchExecutor
 from src.llm.providers.base import LLMProvider, LLMMessage
 from src.utils.logging import get_logger
+from src.utils.prompts import load_prompt_with_context
 
 logger = get_logger(__name__)
 
@@ -62,11 +63,22 @@ class MainAgent(BaseAgent):
                 except Exception as e:
                     logger.error("history_load_error", error=str(e))
 
-        # 1. Подготовка системного промпта
+        # 1. Подготовка системного промпта из файла
         soul_path = f"data/users/{user_id}/soul.md" if user_id else "context/memory/soul.md"
         user_md_path = f"data/users/{user_id}/user.md" if user_id else "context/memory/user.md"
         
-        base_system_prompt = (
+        # Формируем контекст для подстановки в промт
+        context = {
+            "user_id": str(user_id) if user_id else "unknown",
+            "soul_path": soul_path,
+            "user_md_path": user_md_path,
+            "history_context": f"\n\nRecent raw message history for context:\n{user_history_context}" if user_history_context else ""
+        }
+        
+        base_system_prompt = load_prompt_with_context(
+            "agent.md",
+            context,
+            # Fallback - если файл не найден
             f"You are an autonomous AI agent for User {user_id}. "
             f"You have access to your internal 'soul' and 'user' memory files:\n"
             f"1. 'soul.md': {soul_path} - Your identity and behavior.\n"
@@ -75,9 +87,6 @@ class MainAgent(BaseAgent):
             "You can update memory files using 'run_command' (e.g., echo \"...\" > path/to/file).\n"
             "Always explain what you are going to do before running a command."
         )
-        
-        if user_history_context:
-            base_system_prompt += f"\n\nRecent raw message history for context:\n{user_history_context}"
             
         full_system_prompt = await self.context_manager.get_system_prompt_with_context(base_system_prompt, user_dir=user_dir)
         

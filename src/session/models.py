@@ -5,6 +5,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+from src.utils.prompts import load_prompt
 
 
 class Message(BaseModel):
@@ -35,7 +36,7 @@ class Session(BaseModel):
     user_id: int = Field(..., description="ID пользователя Telegram")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    system_prompt: str = Field(default="You are a helpful assistant.")
+    system_prompt: str = Field(default_factory=lambda: load_prompt("default.md", "You are a helpful assistant."))
     context_tokens: int = Field(default=0, description="Количество токенов в контексте")
     messages: list[Message] = Field(default_factory=list)
 

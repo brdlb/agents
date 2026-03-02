@@ -7,6 +7,7 @@ from src.actors.base import Actor
 from src.actors.message import ActorMessage, MessageType
 from src.llm.providers.base import LLMProvider, LLMMessage
 from src.utils.logging import get_logger
+from src.utils.prompts import load_prompt
 
 
 class SubAgent(Actor):
@@ -27,7 +28,7 @@ class SubAgent(Actor):
         """
         super().__init__(actor_id)
         self.provider = provider
-        self.system_prompt = system_prompt or "You are a helpful assistant."
+        self.system_prompt = system_prompt or load_prompt("subagent.md", "You are a helpful assistant specialized in completing delegated tasks.")
         self.logger = get_logger(self.__class__.__name__)
     
     async def receive(self, message: ActorMessage):
