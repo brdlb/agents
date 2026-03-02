@@ -101,7 +101,16 @@ class ActorAgent(Actor, BaseAgent):
             f"2. 'user.md': {user_md_path} - Knowledge about the user.\n"
             "3. Archived topics: You can find summaries of previous discussions in 'archives/*.md' files within your context.\n\n"
             "You can update memory files using 'run_command' (e.g., echo \"...\" > path/to/file).\n"
-            "Always explain what you are going to do before running a command."
+            "Always explain what you are going to do before running a command.\n\n"
+            "## Tools\n"
+            "You have access to the following tools:\n"
+            "- run_command: Execute shell commands\n"
+            "- web_search: Search the internet\n"
+            "- delegate_task: Delegate complex tasks to a sub-agent. "
+            "Use this when: (1) task requires multiple steps, (2) you need parallel processing, "
+            "(3) task is complex and would benefit from separate LLM instance. "
+            "Example: If user asks 'write a script that does X', delegate to sub-agent.\n"
+            "When delegating, provide clear instructions in the task description."
         )
         
         if user_history_context:
