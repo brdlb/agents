@@ -3,6 +3,7 @@
 from typing import Optional
 
 from src.llm.providers.base import LLMProvider
+from src.llm.providers.gemini_cli import GeminiCLIProvider
 from src.llm.providers.openai import OpenAIProvider
 from src.llm.providers.openrouter import OpenRouterProvider
 from src.utils.config import settings
@@ -61,6 +62,18 @@ class LLMFactory:
             logger.info(
                 "llm_provider_created",
                 provider_name="openrouter",
+                model=provider.model,
+            )
+            return provider
+        
+        if name.lower() == "gemini-cli" or name.lower() == "gemini_cli":
+            provider = GeminiCLIProvider(
+                model=model or settings.default_model,
+                **kwargs
+            )
+            logger.info(
+                "llm_provider_created",
+                provider_name="gemini-cli",
                 model=provider.model,
             )
             return provider

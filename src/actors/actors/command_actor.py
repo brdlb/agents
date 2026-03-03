@@ -69,13 +69,22 @@ class CommandActor(Actor):
 
         # Отправляем результат обратно
         if message.reply_to:
+            self.logger.info(
+                "sending_response_back",
+                actor_id=self.actor_id,
+                reply_to=message.reply_to,
+                original_sender=message.sender,
+                correlation_id=message.correlation_id,
+                payload_type=type(result).__name__
+            )
             reply_message = ActorMessage(
                 id=f"reply_{uuid.uuid4().hex[:8]}",
                 sender=self.actor_id,
                 recipient=message.reply_to,
                 payload=result,
                 message_type=MessageType.RESPONSE,
-                correlation_id=message.correlation_id
+                correlation_id=message.correlation_id,
+                reply_to=message.sender  # ИСПРАВЛЕНО: указываем отправителю, куда слать ответ
             )
             await self.tell(reply_message)
         else:

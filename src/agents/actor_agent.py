@@ -107,13 +107,10 @@ class ActorAgent(Actor, BaseAgent):
             "agent.md",
             context,
             # Fallback - если файл не найден
-            f"You are an autonomous AI agent for User {user_id}. "
-            f"You have access to your internal 'soul' and 'user' memory files:\n"
-            f"1. 'soul.md': {soul_path} - Your identity and behavior.\n"
-            f"2. 'user.md': {user_md_path} - Knowledge about the user.\n"
-            "3. Archived topics: You can find summaries of previous discussions in 'archives/*.md' files within your context.\n\n"
-            "You can update memory files using 'run_command' (e.g., echo \"...\" > path/to/file).\n"
-            "Always explain what you are going to do before running a command."
+            f"Ты - автономный AI ассистент для пользователя {user_id}. "
+            f"У тебя есть доступ к файлам 'soul.md' и 'user.md' в директории пользователя. "
+            "Ты можешь использовать инструменты: run_command, web_search, delegate_task."
+            "Всегда объясняй что собираешься сделать перед выполнением команды."
         )
             
         full_system_prompt = await self.context_manager.get_system_prompt_with_context(base_system_prompt, user_dir=user_dir)
@@ -262,15 +259,39 @@ class ActorAgent(Actor, BaseAgent):
                     )
                     await self.spawn_child(command_actor)
                     
-                    # Отправляем сообщение актору и ждем ответ
-                    result = await command_actor.ask(ActorMessage(
-                        id=f"cmd_{uuid4().hex[:8]}",
+                    # Создаем correlation_id для связи запроса и ответа
+                    correlation_id = f"cmd_{uuid4().hex[:8]}"
+                    
+                    # ИСПРАВЛЕНИЕ: Регистрируем Future в ActorAgent (вызывающем) ДО отправки
+                    future = asyncio.Future()
+                    self._pending_futures[correlation_id] = future
+                    self.logger.info(
+                        "pending_future_registered_in_parent",
+                        actor_id=self.actor_id,
+                        correlation_id=correlation_id,
+                        total_pending=len(self._pending_futures)
+                    )
+                    
+                    # Отправляем сообщение актору через tell() (не ask!)
+                    await self.tell(ActorMessage(
+                        id=correlation_id,
                         sender=self.actor_id,
                         recipient=command_actor.actor_id,
                         payload=ExecuteCommand(command=command),
                         message_type=MessageType.EXECUTE_COMMAND,
-                        reply_to=self.actor_id
+                        reply_to=self.actor_id,
+                        correlation_id=correlation_id
                     ))
+                    
+                    # Ждём ответ через Future
+                    try:
+                        result = await asyncio.wait_for(future, timeout=60.0)
+                        if correlation_id in self._pending_futures:
+                            del self._pending_futures[correlation_id]
+                    except asyncio.TimeoutError:
+                        if correlation_id in self._pending_futures:
+                            del self._pending_futures[correlation_id]
+                        raise
                     
                     if result.payload.success:
                         result_content = f"Exit code: {result.payload.data['exit_code']}\nSTDOUT: {result.payload.data['stdout']}\nSTDERR: {result.payload.data['stderr']}"
@@ -291,22 +312,61 @@ class ActorAgent(Actor, BaseAgent):
                         actor_id=self.actor_id
                     )
                     
-                    # Создаем актора для веб-поиска
-                    search_actor = WebSearchActor(executor=self.web_search_executor)
+                    # Создаем актора для веб-поиска с LLM провайдером
+                    search_actor = WebSearchActor(
+                        executor=self.web_search_executor,
+                        llm_provider=self.provider  # Передаем LLM для agentic search
+                    )
                     await self.spawn_child(search_actor)
                     
-                    # Отправляем сообщение актору и ждем ответ
-                    result = await search_actor.ask(ActorMessage(
-                        id=f"search_{uuid4().hex[:8]}",
+                    # Создаем correlation_id для связи запроса и ответа
+                    correlation_id = f"search_{uuid4().hex[:8]}"
+                    
+                    # ИСПРАВЛЕНИЕ: Регистрируем Future в ActorAgent (вызывающем) ДО отправки
+                    future = asyncio.Future()
+                    self._pending_futures[correlation_id] = future
+                    self.logger.info(
+                        "pending_future_registered_in_parent",
+                        actor_id=self.actor_id,
+                        correlation_id=correlation_id,
+                        total_pending=len(self._pending_futures)
+                    )
+                    
+                    # Отправляем сообщение актору через tell() (не ask!)
+                    await self.tell(ActorMessage(
+                        id=correlation_id,
                         sender=self.actor_id,
                         recipient=search_actor.actor_id,
                         payload=WebSearchQuery(query=query),
                         message_type=MessageType.WEB_SEARCH,
-                        reply_to=self.actor_id
+                        reply_to=self.actor_id,
+                        correlation_id=correlation_id
                     ))
                     
+                    # Ждём ответ через Future (не через ask() дочернего актора!)
+                    try:
+                        result = await asyncio.wait_for(future, timeout=120.0)  # Увеличенный таймаут для agentic search
+                        # Удаляем Future после получения ответа
+                        if correlation_id in self._pending_futures:
+                            del self._pending_futures[correlation_id]
+                    except asyncio.TimeoutError:
+                        if correlation_id in self._pending_futures:
+                            del self._pending_futures[correlation_id]
+                        raise
+                    
                     if result.payload.success:
-                        result_content = json.dumps(result.payload.data['results'], ensure_ascii=False, indent=2)
+                        data = result.payload.data
+                        # Проверяем тип результата
+                        if data.get("type") == "agentic":
+                            # Agentic search - возвращаем финальный ответ
+                            result_content = data.get("final_answer", "")
+                            # Добавляем источники для прозрачности
+                            urls = data.get("urls_analyzed", [])
+                            if urls:
+                                result_content += "\n\nИсточники: " + "\n".join(urls)
+                        else:
+                            # Простой поиск
+                            result_content = json.dumps(data['results'], ensure_ascii=False, indent=2)
                     else:
                         result_content = f"Error: {result.payload.error}"
                 
@@ -318,15 +378,39 @@ class ActorAgent(Actor, BaseAgent):
                     sub_agent = self.spawn_subagent()
                     await self.spawn_child(sub_agent)
                     
-                    # Отправляем задачу суб-агенту и ждём ответ
-                    result = await sub_agent.ask(ActorMessage(
-                        id=f"delegate_{uuid4().hex[:8]}",
+                    # Создаем correlation_id для связи запроса и ответа
+                    correlation_id = f"delegate_{uuid4().hex[:8]}"
+                    
+                    # ИСПРАВЛЕНИЕ: Регистрируем Future в ActorAgent (вызывающем) ДО отправки
+                    future = asyncio.Future()
+                    self._pending_futures[correlation_id] = future
+                    self.logger.info(
+                        "pending_future_registered_in_parent",
+                        actor_id=self.actor_id,
+                        correlation_id=correlation_id,
+                        total_pending=len(self._pending_futures)
+                    )
+                    
+                    # Отправляем задачу суб-агенту через tell()
+                    await self.tell(ActorMessage(
+                        id=correlation_id,
                         sender=self.actor_id,
                         recipient=sub_agent.actor_id,
                         payload={"task": task},
                         message_type=MessageType.DELEGATE_TASK,
-                        reply_to=self.actor_id
+                        reply_to=self.actor_id,
+                        correlation_id=correlation_id
                     ))
+                    
+                    # Ждём ответ
+                    try:
+                        result = await asyncio.wait_for(future, timeout=120.0)
+                        if correlation_id in self._pending_futures:
+                            del self._pending_futures[correlation_id]
+                    except asyncio.TimeoutError:
+                        if correlation_id in self._pending_futures:
+                            del self._pending_futures[correlation_id]
+                        raise
                     
                     # Извлекаем результат
                     if result.payload.get("success"):

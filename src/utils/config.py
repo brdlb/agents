@@ -22,13 +22,13 @@ class Settings(BaseSettings):
     telegram_admin_ids: str = Field(default="", description="ID администраторов через запятую")
 
     # LLM Provider
-    llm_provider: str = Field(default="openai", description="Провайдер LLM")
+    llm_provider: str = Field(default="gemini-cli", description="Провайдер LLM")
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API ключ")
     anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic API ключ")
     openrouter_api_key: Optional[str] = Field(default=None, description="OpenRouter API ключ")
     local_llm_url: Optional[str] = Field(default=None, description="URL локального LLM")
     local_llm_model: Optional[str] = Field(default=None, description="Модель локального LLM")
-    default_model: str = Field(default="gpt-4o-mini", description="Модель по умолчанию")
+    default_model: str = Field(default="gemini-2.5-flash-lite", description="Модель по умолчанию")
 
     # Storage
     data_dir: Path = Field(default=Path("./data"), description="Директория для данных")

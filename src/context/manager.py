@@ -71,6 +71,16 @@ class ContextManager:
             content, tokens = await self.load_file(file_path)
             if not content:
                 continue
+            
+            # Пропускаем файлы которые САМИ больше лимита (не поместятся никогда)
+            if tokens > self.max_tokens:
+                logger.warning(
+                    "file_too_large_for_context",
+                    file=file_path.name,
+                    file_tokens=tokens,
+                    max_tokens=self.max_tokens
+                )
+                continue
                 
             if current_tokens + tokens > self.max_tokens:
                 logger.warning(

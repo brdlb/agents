@@ -162,6 +162,29 @@ class OpenAIProvider(LLMProvider):
                 finish_reason=response.choices[0].finish_reason,
                 tool_calls=tool_calls
             )
+        except openai.APIStatusError as e:
+            status_code = getattr(e, "status_code", None)
+            error_body = getattr(e, "response", None)
+            
+            # Детальная обработка ошибки 402 (Payment Required)
+            if status_code == 402:
+                logger.error(
+                    "llm_insufficient_credits",
+                    provider="openai",
+                    error_type=type(e).__name__,
+                    error_message="Недостаточно средств на аккаунте. Проверьте баланс на https://openrouter.ai/settings/credits",
+                    status_code=status_code,
+                )
+            else:
+                logger.error(
+                    "llm_api_error",
+                    provider="openai",
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    status_code=status_code,
+                    response_body=str(error_body)[:200] if error_body else None,
+                )
+            raise
         except openai.APIError as e:
             logger.error(
                 "llm_api_error",

@@ -163,14 +163,34 @@ class TelegramBot:
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик ошибок."""
+        error = context.error
+        error_type = type(error).__name__
+        error_str = str(error)
+        
         logger.error(
             "telegram_error", 
-            error=str(context.error), 
-            error_type=type(context.error).__name__,
+            error=error_str, 
+            error_type=error_type,
             update=str(update)
         )
+        
+        # Определяем сообщение об ошибке для пользователя
+        user_message = "Произошла ошибка при обработке вашего запроса. Попробуйте позже."
+        
+        # Проверяем на ошибку недостатка средств
+        if "402" in error_str or "Payment Required" in error_str or "credits" in error_str.lower():
+            user_message = (
+                "⚠️ Ошибка оплаты: недостаточно средств на аккаунте LLM провайдера.\n\n"
+                "Пожалуйста, проверьте баланс на https://openrouter.ai/settings/credits "
+                "и пополните счет, либо измените провайдера в .env файле."
+            )
+        elif "API" in error_str and "key" in error_str.lower():
+            user_message = "⚠️ Ошибка API ключа. Проверьте настройки в .env файле."
+        elif "timeout" in error_str.lower() or "timed out" in error_str.lower():
+            user_message = "⏱️ Превышен таймаут ожидания. Попробуйте еще раз."
+            
         if isinstance(update, Update) and update.message:
-            await update.message.reply_text("Произошла ошибка при обработке вашего запроса. Попробуйте позже.")
+            await update.message.reply_text(user_message)
 
     def run(self):
         """Запуск бота."""
