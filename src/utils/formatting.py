@@ -36,7 +36,6 @@ def markdown_to_html(text: str) -> str:
         return placeholder
 
     # 1. Сохраняем блоки кода
-    # Улучшенный regex для корректного захвата кода без лишних переводов строк в конце
     text = re.sub(r'```(\w*)\n?(.*?)\n?```', save_block, text, flags=re.DOTALL)
     
     # 2. Сохраняем инлайновый код
@@ -62,8 +61,8 @@ def markdown_to_html(text: str) -> str:
     # 8. Обрабатываем заголовки
     text = re.sub(r'^#+\s+(.*?)$', r'<b>\1</b>', text, flags=re.M)
 
-    # 9. Обрабатываем цитаты
-    text = re.sub(r'^>\s+(.*?)$', r'<blockquote>\1</blockquote>', text, flags=re.M)
+    # 9. Обрабатываем цитаты (после escape это &gt;)
+    text = re.sub(r'^&gt;\s+(.*?)$', r'<blockquote>\1</blockquote>', text, flags=re.M)
 
     # 10. Возвращаем блоки кода
     for placeholder, code_html in code_blocks.items():
