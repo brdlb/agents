@@ -21,6 +21,7 @@ from src.session.manager import SessionManager
 from src.utils.config import settings
 from src.utils.logging import get_logger
 from src.actors.system import ActorSystem
+from src.utils.formatting import markdown_to_html
 
 logger = get_logger(__name__)
 
@@ -63,12 +64,12 @@ class TelegramBot:
             session = await self.session_manager.create_session(user_id)
         
         welcome_text = (
-            f"Привет, {user.first_name or 'пользователь'}! 👋\n\n"
+            f"Привет, <b>{user.first_name or 'пользователь'}</b>! 👋\n\n"
             "Я твоя агентная система. Я могу помогать тебе в решении задач, "
             "писать код, выполнять команды и работать с контекстом документов.\n\n"
             "Просто напиши мне свой запрос!"
         )
-        await update.message.reply_text(welcome_text)
+        await update.message.reply_text(welcome_text, parse_mode=constants.ParseMode.HTML)
 
     async def message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик текстовых сообщений."""
@@ -147,7 +148,19 @@ class TelegramBot:
         except Exception:
             pass
             
-        await update.message.reply_text(response_text)
+        # Конвертируем Markdown в HTML для Telegram
+        formatted_response = markdown_to_html(response_text)
+        
+        try:
+            await update.message.reply_text(
+                formatted_response, 
+                parse_mode=constants.ParseMode.HTML,
+                disable_web_page_preview=True
+            )
+        except Exception as e:
+            logger.warning("telegram_send_html_error", error=str(e), response_text=response_text[:100])
+            # Если HTML не прошел, пробуем отправить обычный текст
+            await update.message.reply_text(response_text)
         
         # Сохраняем диалог (включая промежуточные сообщения)
         await self.session_manager.add_message(user_id, session.id, "user", text)
@@ -180,17 +193,17 @@ class TelegramBot:
         # Проверяем на ошибку недостатка средств
         if "402" in error_str or "Payment Required" in error_str or "credits" in error_str.lower():
             user_message = (
-                "⚠️ Ошибка оплаты: недостаточно средств на аккаунте LLM провайдера.\n\n"
-                "Пожалуйста, проверьте баланс на https://openrouter.ai/settings/credits "
+                "⚠️ <b>Ошибка оплаты:</b> недостаточно средств на аккаунте LLM провайдера.\n\n"
+                "Пожалуйста, проверьте баланс на <a href=\"https://openrouter.ai/settings/credits\">OpenRouter</a> "
                 "и пополните счет, либо измените провайдера в .env файле."
             )
         elif "API" in error_str and "key" in error_str.lower():
-            user_message = "⚠️ Ошибка API ключа. Проверьте настройки в .env файле."
+            user_message = "⚠️ <b>Ошибка API ключа.</b> Проверьте настройки в .env файле."
         elif "timeout" in error_str.lower() or "timed out" in error_str.lower():
-            user_message = "⏱️ Превышен таймаут ожидания. Попробуйте еще раз."
+            user_message = "⏱️ <b>Превышен таймаут ожидания.</b> Попробуйте еще раз."
             
         if isinstance(update, Update) and update.message:
-            await update.message.reply_text(user_message)
+            await update.message.reply_text(user_message, parse_mode=constants.ParseMode.HTML)
 
     def run(self):
         """Запуск бота."""

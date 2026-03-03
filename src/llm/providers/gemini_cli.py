@@ -100,9 +100,8 @@ class GeminiCLIProvider(LLMProvider):
         )
         
         try:
-            # Формируем команду - используем stdin для передачи промпта
-            # чтобы избежать ошибки "command line is too long"
-            cmd = f"{self._gemini_cmd} --model {self.model} --output-format json -y"
+            # Формируем команду - используем stdin для промпта
+            cmd = f'{self._gemini_cmd} --output-format json --approval-mode yolo'
             
             # На Windows используем shell=True
             shell = sys.platform == "win32"
@@ -119,9 +118,8 @@ class GeminiCLIProvider(LLMProvider):
                 # На Unix используем create_subprocess_exec
                 cmd_list = [
                     self._gemini_cmd,
-                    "--model", self.model,
                     "--output-format", "json",
-                    "-y"
+                    "--approval-mode", "yolo"
                 ]
                 process = await asyncio.create_subprocess_exec(
                     *cmd_list,
@@ -131,24 +129,49 @@ class GeminiCLIProvider(LLMProvider):
                 )
             
             # Отправляем промпт через stdin
-            await process.communicate(input=prompt.encode())
-            
-            stdout, stderr = await process.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(input=prompt.encode('utf-8')),
+                    timeout=180  # 3 минуты timeout
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                raise RuntimeError("Gemini CLI timed out")
             
             if process.returncode != 0:
-                error_msg = stderr.decode() if stderr else "Unknown error"
+                stderr_decoded = stderr.decode('utf-8', errors='replace') if stderr else ""
+                stdout_decoded = stdout.decode('utf-8', errors='replace') if stdout else ""
+                error_msg = stderr_decoded or stdout_decoded or "Unknown error"
                 logger.error(
                     "gemini_cli_error",
                     provider="gemini-cli",
                     returncode=process.returncode,
-                    error=error_msg,
+                    error=error_msg[:500],
+                    stdout_preview=stdout_decoded[:200],
                 )
                 raise RuntimeError(f"Gemini CLI error: {error_msg}")
             
             # Парсим JSON ответ
-            response_text = stdout.decode()
+            response_text = stdout.decode('utf-8', errors='replace').strip()
+            
+            # Убираем служебные строки из вывода (предупреждения YOLO и т.д.)
+            lines = response_text.split('\n')
+            json_lines = []
+            in_json = False
+            for line in lines:
+                # Пропускаем служебные строки
+                if 'YOLO mode' in line or 'Loaded cached' in line or line.strip() == '':
+                    continue
+                # Начинаем JSON
+                if line.strip().startswith('{'):
+                    in_json = True
+                if in_json:
+                    json_lines.append(line)
+            
+            json_text = '\n'.join(json_lines)
+            
             try:
-                response_json = json.loads(response_text)
+                response_json = json.loads(json_text)
             except json.JSONDecodeError:
                 # Если не JSON, возвращаем как есть
                 logger.warning(

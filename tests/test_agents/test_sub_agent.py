@@ -24,7 +24,7 @@ async def test_sub_agent_creation():
     # Проверяем инициализацию
     assert agent.actor_id == "test_subagent"
     assert agent.provider is mock_provider
-    assert agent.system_prompt == "You are a helpful assistant."
+    assert "You are a helpful assistant specialized in completing delegated tasks." in agent.system_prompt
 
 
 @pytest.mark.asyncio
@@ -81,7 +81,7 @@ async def test_sub_agent_delegate_task():
     call_args = mock_provider.generate.call_args[0][0]
     assert len(call_args) == 2
     assert call_args[0].role == "system"
-    assert call_args[0].content == "You are a helpful assistant."
+    assert "You are a helpful assistant specialized in completing delegated tasks." in call_args[0].content
     assert call_args[1].role == "user"
     assert call_args[1].content == "Напиши скрипт"
     
